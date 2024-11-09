@@ -8,22 +8,103 @@ date: "2024-11-09"
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## R Markdown
+# NBA DATA ANALYSIS:
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+Load Necessary Libs
+```{r, include=FALSE}
+library(tidyverse)
+library(broom)
+library(car) 
+library(stats)
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r cars}
-summary(cars)
+library(RCurl)
+library(tidyr)
+library(dplyr)
 ```
 
-## Including Plots
 
-You can also embed plots, for example:
+Load Raw Data:
+```{r}
+url_defensive <- getURL("https://raw.githubusercontent.com/AlRzRz/NBAAnalysisR/refs/heads/main/data/1996-2024.csv")
+nba_defensive <- read.csv(text = url_defensive)
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+url_agility <- getURL("https://raw.githubusercontent.com/AlRzRz/NBAAnalysisR/refs/heads/main/data/combineAgility.csv")
+nba_agility <- read.csv(text = url_agility)
+
+url_anthro <- getURL("https://raw.githubusercontent.com/AlRzRz/NBAAnalysisR/refs/heads/main/data/combineAnthro.csv")
+nba_anthro <- read.csv(text = url_anthro)
+
+url_regular <- getURL("https://raw.githubusercontent.com/AlRzRz/NBAAnalysisR/refs/heads/main/data/regularStats96-24.csv")
+nba_regular <- read.csv(text = url_regular)
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+Clean the Data: (For reference we will work only with data from 2000 - 2023 to
+keep all data-sets on the same time frame)
+```{r}
+# Filter data to only include records from 2000-2024
+nba_defensive <- nba_defensive %>% filter(YEAR >= 2000)
+nba_agility <- nba_agility %>% filter(YEAR >= 2000)
+nba_anthro <- nba_anthro %>% filter(YEAR >= 2000)
+nba_regular <- nba_regular %>% filter(YEAR >= 2000)
+```
+
+Adjust column names:
+```{r}
+# Rename columns to simplify referencing them
+nba_defensive <- nba_defensive %>%
+  rename(
+    DEF_RTG = `DEF.RTG`,
+    DREB_PERCENT = `DREB.`,
+    STL_PERCENT = `STL.`,
+    BLK_PERCENT = `X.BLK`,
+    TOTALMIN = `MIN`  # For clarity during calculations
+  )
+
+nba_agility <- nba_agility %>%
+  rename(
+    LANE_AGILITY = `LANE.AGILITY.TIME..SECONDS.`,
+    SHUTTLE = `SHUTTLE.RUN..SECONDS.`,
+    SPRINT = `THREE.QUARTER.SPRINT..SECONDS.`,
+    STANDING_VERT = `STANDING.VERTICAL.LEAP..INCHES.`,
+    MAX_VERT = `MAX.VERTICAL.LEAP..INCHES.`
+  )
+
+nba_anthro <- nba_anthro %>%
+  rename(
+    HAND_LENGTH = `HAND.LENGTH..Inches.`,
+    HAND_WIDTH = `HAND.WIDTH..INCHES.`,
+    HEIGHT = `HEIGHT.W.O.SHOES`,
+    WEIGHT = `WEIGHT..LBS.`
+  )
+```
+
+Create new Dataset tailored for the GLM:
+```{r}
+# Convert necessary columns to numeric in `nba_defensive`
+nba_defensive <- nba_defensive %>%
+  mutate(
+    GP = as.numeric(GP),
+    TOTALMIN = as.numeric(TOTALMIN),
+    DEF_RTG = as.numeric(DEF_RTG)
+  ) %>%
+  # Calculate TOTALMIN and filter for players with sufficient playing time
+  mutate(TOTALMIN = GP * TOTALMIN) %>%
+  filter(TOTALMIN > 1500, YEAR < 2024)
+
+# Select and merge relevant columns
+nba_glm_data <- nba_defensive %>%
+  select(YEAR, PLAYER, TEAM, DEF_RTG) %>%
+  left_join(
+    nba_anthro %>% select(YEAR, PLAYER, HEIGHT, HAND_LENGTH, HAND_WIDTH, WEIGHT, WINGSPAN),
+    by = c("YEAR", "PLAYER")
+  ) %>%
+  left_join(
+    nba_agility %>% select(YEAR, PLAYER, SHUTTLE, MAX_VERT),
+    by = c("YEAR", "PLAYER")
+  )
+
+# Remove rows with any missing data
+nba_glm_data <- na.omit(nba_glm_data)
+
+```
+
